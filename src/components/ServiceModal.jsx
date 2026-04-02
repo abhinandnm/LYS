@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
 import { simulateS3Upload, simulateRDSInsert, simulateLambdaTrigger, simulateCloudWatchLog } from '../cloud/AWSUtils';
+import CONFIG from '../config'
 
 const ServiceModal = ({ isOpen, onClose, onAddService }) => {
   const [formData, setFormData] = useState({
@@ -21,32 +21,31 @@ const ServiceModal = ({ isOpen, onClose, onAddService }) => {
     setIsSubmitting(true);
     setStep(2);
 
-    simulateCloudWatchLog(`Starting service registration for: ${formData.name}`);
-
     try {
-      // Step 1: Simulate S3 Upload (using the preview URL for immediate display)
-      const imageUrl = formData.imagePreview || (await simulateS3Upload({ name: formData.name }));
-      
-      // Step 2: Simulate RDS Insertion
-      const finalData = { 
-        ...formData, 
-        image: imageUrl, 
-        rating: 5.0, 
-        reviews: 0,
-        id: Math.floor(Math.random() * 1000000)
-      };
-      const savedService = await simulateRDSInsert(finalData);
-      
-      // Step 3: Simulate Lambda Trigger
-      await simulateLambdaTrigger(savedService.id);
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('price', formData.price);
+      formDataToSend.append('location', formData.location);
+      formDataToSend.append('provider', formData.provider);
+      if (formData.image) {
+        formDataToSend.append('image', formData.image);
+      }
 
-      simulateCloudWatchLog(`Service registration completed for ID: ${savedService.id}`);
+      const response = await fetch(`${CONFIG.API_URL}/api/services`, {
+        method: 'POST',
+        body: formDataToSend,
+      });
+
+      if (!response.ok) throw new Error('Upload failed');
       
+      const savedService = await response.json();
       onAddService(savedService);
       setStep(3);
     } catch (error) {
-      simulateCloudWatchLog(`Service registration failed: ${error.message}`, 'ERROR');
-      alert("Registration failed. Check CloudWatch logs.");
+      console.error("Submission failed:", error);
+      alert("Failed to list service. Make sure backend is running.");
+      setStep(1);
     } finally {
       setIsSubmitting(false);
     }

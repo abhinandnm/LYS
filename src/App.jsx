@@ -1,92 +1,38 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Categories from './components/Categories'
 import FeaturedListings from './components/FeaturedListings'
 import ServiceModal from './components/ServiceModal'
-
-const INITIAL_SERVICES = [
-  { 
-    id: 1, 
-    name: 'Sharma Electrical Solutions', 
-    provider: 'Rahul Sharma',
-    category: 'Electrician', 
-    rating: 4.9, 
-    reviews: 128, 
-    price: '₹499/hr',
-    location: 'Mumbai, MH',
-    image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=500&auto=format&fit=crop'
-  },
-  { 
-    id: 2, 
-    name: 'Vedic Math & Science Tutors', 
-    provider: 'Anjali Gupta',
-    category: 'Tutor', 
-    rating: 5.0, 
-    reviews: 45, 
-    price: '₹800/hr',
-    location: 'Bengaluru, KA',
-    image: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=500&auto=format&fit=crop'
-  },
-  { 
-    id: 3, 
-    name: 'Blue Diamond Cleaning', 
-    provider: 'Vikram Singh',
-    category: 'Cleaner', 
-    rating: 4.8, 
-    reviews: 210, 
-    price: '₹350/hr',
-    location: 'Delhi, NCR',
-    image: 'https://images.unsplash.com/photo-1581578731548-c64695ce6958?q=80&w=500&auto=format&fit=crop'
-  },
-  { 
-    id: 4, 
-    name: 'FitIndia Personal Training', 
-    provider: 'Arjun Kapoor',
-    category: 'Fitness', 
-    rating: 4.7, 
-    reviews: 89, 
-    price: '₹1200/hr',
-    location: 'Hyderabad, TS',
-    image: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?q=80&w=500&auto=format&fit=crop'
-  },
-];
+import CONFIG from './config'
 
 function App() {
-  const [services, setServices] = useState(INITIAL_SERVICES);
+  const [services, setServices] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const filteredServices = useMemo(() => {
-    return services.filter(service => {
-      const sQuery = searchQuery.toLowerCase().trim();
-      const lQuery = locationQuery.toLowerCase().trim();
+  useEffect(() => {
+    fetchServices();
+  }, [locationQuery]); // Refresh when location changes
 
-      // Flexible Name/Category matching
-      const matchName = service.name.toLowerCase().includes(sQuery) || 
-                       service.category.toLowerCase().includes(sQuery) ||
-                       // Handle plural categories (e.g., 'Tutors' matches 'Tutor')
-                       sQuery.startsWith(service.category.toLowerCase()) ||
-                       service.category.toLowerCase().startsWith(sQuery.replace(/s$/, ''));
-
-      // Flexible Location matching (e.g., 'Mumbai' matches 'Mumbai, MH')
-      const serviceLoc = service.location.toLowerCase();
-      const matchLocation = !lQuery || 
-                           serviceLoc.includes(lQuery) || 
-                           lQuery.includes(serviceLoc.split(',')[0].trim());
-
-      return (sQuery === '' || matchName) && matchLocation;
-    });
-  }, [services, searchQuery, locationQuery]);
-
-  const handleAddService = (newService) => {
-    setServices([newService, ...services]);
+  const fetchServices = async (searchQuery = '') => {
+    try {
+      const url = searchQuery 
+        ? `${CONFIG.API_URL}/api/services/search?q=${searchQuery}` 
+        : `${CONFIG.API_URL}/api/services`;
+      const response = await fetch(url);
+      const data = await response.json();
+      setServices(data);
+    } catch (error) {
+      console.error("Error fetching services:", error);
+    }
   };
 
   const handleSearch = (query, location) => {
     setSearchQuery(query);
     setLocationQuery(location);
+    fetchServices(query); // Call the search API
     // Smooth scroll to results
     const resultsSection = document.getElementById('browse');
     if (resultsSection) {
@@ -102,7 +48,7 @@ function App() {
         <Categories onSelectCategory={(catName) => handleSearch(catName, locationQuery)} />
         <div id="browse">
           <FeaturedListings 
-            services={filteredServices} 
+            services={services} 
             title={searchQuery ? `Search Results for "${searchQuery}"` : "Featured Services"} 
           />
         </div>
