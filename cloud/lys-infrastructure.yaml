@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'LYS Platform Infrastructure: VPC, EC2, and RDS for University Project'
+
+Parameters:
+  DBUser:
+    Type: String
+    Default: 'lys_admin'
+    Description: 'Username for RDS Instance'
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: 'lys_p@ssword123'
+    Description: 'Password for RDS Instance'
+
+Resources:
+  # --- VPC & Networking ---
+  LYSVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: LYS-VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LYSVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: LYS-Public-Subnet
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LYSVPC
+      CidrBlock: 10.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: LYS-Private-Subnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LYSVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LYSVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # --- Security Groups ---
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access
+      VpcId: !Ref LYSVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable database access from Web SG
+      VpcId: !Ref LYSVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+
+  # --- Database (RDS) ---
+  LYSDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for LYS RDS Instance
+      SubnetIds:
+        - !Ref PublicSubnet # AWS RDS requires at least 2 subnets in different AZs normally
+        - !Ref PrivateSubnet
+
+  LYSRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: lys_db
+      Engine: postgres
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: '20'
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref LYSDBSubnetGroup
+      PubliclyAccessible: false
+
+  # --- Compute (EC2) ---
+  LYSEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-03f487104bd3e66b4 # Amazon Linux 2 AMI for ap-south-1 (Mumbai)
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      Tags:
+        - Key: Name
+          Value: LYS-App-Server
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install git -y
+          curl -sL https://rpm.nodesource.com/setup_16.x | bash -
+          yum install -y nodejs
+          
+          # Clone and Deploy LYS
+          cd /home/ec2-user
+          git clone https://github.com/abhinandnm/LYS.git
+          cd LYS
+          npm install
+          npm run build
+          
+          # Install Nginx as Reverse Proxy
+          amazon-linux-extras install nginx1 -y
+          systemctl start nginx
+          systemctl enable nginx
+
+Outputs:
+  AppServerIP:
+    Description: Public IP of the LYS App Server
+    Value: !GetAtt LYSEC2Instance.PublicIp
+  RDSEndpoint:
+    Description: Endpoint of the LYS Database
+    Value: !GetAtt LYSRDSInstance.Endpoint.Address

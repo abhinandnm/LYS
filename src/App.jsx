@@ -11,9 +11,18 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Activity History State
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [myListings, setMyListings] = useState([]);
 
   useEffect(() => {
     fetchServices();
+    // Load history from localStorage
+    const savedSearches = JSON.parse(localStorage.getItem('lys_searches') || '[]');
+    const savedListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
+    setRecentSearches(savedSearches);
+    setMyListings(savedListings);
   }, [locationQuery]); // Refresh when location changes
 
   const fetchServices = async (searchQuery = '') => {
@@ -30,6 +39,13 @@ function App() {
   };
 
   const handleSearch = (query, location) => {
+    if (query.trim()) {
+      // Save to recent searches
+      const updatedSearches = [query, ...recentSearches.filter(s => s !== query)].slice(0, 5);
+      setRecentSearches(updatedSearches);
+      localStorage.setItem('lys_searches', JSON.stringify(updatedSearches));
+    }
+
     setSearchQuery(query);
     setLocationQuery(location);
     fetchServices(query); // Call the search API
@@ -40,13 +56,23 @@ function App() {
     }
   };
 
-  const handleAddService = () => {
+  const handleAddService = (newService) => {
+    // Save to My Listings
+    const updatedListings = [newService, ...myListings].slice(0, 10);
+    setMyListings(updatedListings);
+    localStorage.setItem('lys_my_listings', JSON.stringify(updatedListings));
+    
     fetchServices(); // Refresh list after adding
   };
 
   return (
     <div className="app">
-      <Navbar onOpenModal={() => setIsModalOpen(true)} />
+      <Navbar 
+        onOpenModal={() => setIsModalOpen(true)} 
+        recentSearches={recentSearches}
+        myListings={myListings}
+        onSearch={handleSearch}
+      />
       <main>
         <Hero onSearch={handleSearch} onOpenModal={() => setIsModalOpen(true)} />
         <Categories onSelectCategory={(catName) => handleSearch(catName, locationQuery)} />
