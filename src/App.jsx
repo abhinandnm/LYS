@@ -40,6 +40,10 @@ function App() {
     }
   };
 
+  const handleAddService = () => {
+    fetchServices(); // Refresh list after adding
+  };
+
   return (
     <div className="app">
       <Navbar onOpenModal={() => setIsModalOpen(true)} />
