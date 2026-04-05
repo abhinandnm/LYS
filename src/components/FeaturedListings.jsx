@@ -17,7 +17,7 @@ const FeaturedListings = ({ services, title }) => {
               <div key={service.id} className="service-card animate-fade-in">
                 <div className="card-image">
                   <img 
-                    src={service.image || "https://images.unsplash.com/photo-1581578731548-c64695ce6958?q=80&w=500&auto=format&fit=crop"} 
+                    src={service.image_url || service.image || "https://images.unsplash.com/photo-1581578731548-c64695ce6958?q=80&w=500&auto=format&fit=crop"} 
                     alt={service.name} 
                   />
                   <span className="price-tag">{service.price}</span>

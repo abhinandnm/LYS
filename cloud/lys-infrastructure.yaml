@@ -29,6 +29,7 @@ Resources:
     Properties:
       VpcId: !Ref LYSVPC
       CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Sub "${AWS::Region}a"
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -39,6 +40,7 @@ Resources:
     Properties:
       VpcId: !Ref LYSVPC
       CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Sub "${AWS::Region}b"
       Tags:
         - Key: Name
           Value: LYS-Private-Subnet
@@ -111,7 +113,7 @@ Resources:
     Properties:
       DBName: lys_db
       Engine: postgres
-      DBInstanceClass: db.t2.micro
+      DBInstanceClass: db.t3.micro
       AllocatedStorage: '20'
       MasterUsername: !Ref DBUser
       MasterUserPassword: !Ref DBPassword
@@ -120,12 +122,103 @@ Resources:
       DBSubnetGroupName: !Ref LYSDBSubnetGroup
       PubliclyAccessible: false
 
+  # --- Storage (S3) ---
+  LYSImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "lys-images-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  LYSImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LYSImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${LYSImagesBucket.Arn}/*"
+
+  # --- Security (IAM) ---
+  LYSEC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "${LYSImagesBucket.Arn}/*"
+
+  LYSInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref LYSEC2Role
+
+  # --- Monitoring (CloudWatch - Advanced Service 2) ---
+  CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Alarm if CPU exceeds 70% for 5 minutes"
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 70
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref LYSEC2Instance
+
+  LYSDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: "LYS-Monitoring-Dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/EC2", "CPUUtilization", "InstanceId", "${LYSEC2Instance}" ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "EC2 CPU Utilization"
+              }
+            }
+          ]
+        }
+
   # --- Compute (EC2) ---
   LYSEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
-      ImageId: ami-03f487104bd3e66b4 # Amazon Linux 2 AMI for ap-south-1 (Mumbai)
+      InstanceType: t3.micro
+      IamInstanceProfile: !Ref LYSInstanceProfile
+      ImageId: "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
       SubnetId: !Ref PublicSubnet
       SecurityGroupIds:
         - !Ref WebSecurityGroup
@@ -135,22 +228,68 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          yum update -y
-          yum install git -y
-          curl -sL https://rpm.nodesource.com/setup_16.x | bash -
-          yum install -y nodejs
+          set -e
+          # 1. System Updates & Dependencies
+          apt-get update -y
+          apt-get install -y git nodejs npm nginx postgresql-client
           
-          # Clone and Deploy LYS
-          cd /home/ec2-user
+          # 2. Setup Nginx Reverse Proxy (Improved)
+          cat > /etc/nginx/sites-available/default <<'EOF'
+          server {
+              listen 80;
+              location /api {
+                  proxy_pass http://localhost:3001;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+              location / {
+                  root /var/www/html;
+                  index index.html;
+              }
+          }
+          EOF
+          # Ensure the symlink exists and force it
+          ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+          systemctl restart nginx
+          
+          # 3. Clone and Setup LYS Application
+          mkdir -p /home/ubuntu
+          cd /home/ubuntu
           git clone https://github.com/abhinandnm/LYS.git
-          cd LYS
+          cd LYS/server
           npm install
-          npm run build
           
-          # Install Nginx as Reverse Proxy
-          amazon-linux-extras install nginx1 -y
-          systemctl start nginx
-          systemctl enable nginx
+          # 4. Create Environment File
+          cat > .env <<EOF
+          DB_HOST=${LYSRDSInstance.Endpoint.Address}
+          DB_USER=${DBUser}
+          DB_PASSWORD=${DBPassword}
+          DB_NAME=lys_db
+          DB_PORT=5432
+          S3_BUCKET_NAME=lys-images-${AWS::AccountId}
+          AWS_REGION=${AWS::Region}
+          PORT=3001
+          EOF
+          
+          # 5. Initialize Database Table
+          export PGPASSWORD='${DBPassword}'
+          # Wait for RDS to be fully reachable (handshake time)
+          sleep 30
+          psql -h ${LYSRDSInstance.Endpoint.Address} -U ${DBUser} -d lys_db -c "
+          CREATE TABLE IF NOT EXISTS services (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(255) NOT NULL,
+              category VARCHAR(100),
+              price DECIMAL(10, 2),
+              location VARCHAR(255),
+              provider VARCHAR(255),
+              image_url TEXT,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );"
+          
+          # 6. Start the Backend
+          nohup npm start > /home/ubuntu/lys_app.log 2>&1 &
 
 Outputs:
   AppServerIP:
@@ -159,3 +298,9 @@ Outputs:
   RDSEndpoint:
     Description: Endpoint of the LYS Database
     Value: !GetAtt LYSRDSInstance.Endpoint.Address
+  S3BucketName:
+    Description: Name of the LYS Images Bucket
+    Value: !Ref LYSImagesBucket
+  CloudWatchDashboard:
+    Description: Visit CloudWatch to see your Monitoring Dashboard
+    Value: "LYS-Monitoring-Dashboard"
