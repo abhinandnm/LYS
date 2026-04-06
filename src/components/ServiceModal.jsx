@@ -38,14 +38,17 @@ const ServiceModal = ({ isOpen, onClose, onAddService }) => {
         body: formDataToSend,
       });
 
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || response.statusText || 'Server error');
+      }
       
       const savedService = await response.json();
       onAddService(savedService);
       setStep(3);
     } catch (error) {
       console.error("Submission failed:", error);
-      alert("Failed to list service. Make sure backend is running.");
+      alert(`Submission Error: ${error.message}\n\nPlease verify your internet connection or file size.`);
       setStep(1);
     } finally {
       setIsSubmitting(false);
