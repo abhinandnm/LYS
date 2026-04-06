@@ -53,7 +53,6 @@ function App() {
     <div className="app">
       <Navbar 
         onOpenModal={() => setIsModalOpen(true)} 
-        onSearch={handleSearch}
       />
       <main>
         <Hero onSearch={handleSearch} onOpenModal={() => setIsModalOpen(true)} />
