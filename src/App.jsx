@@ -18,11 +18,17 @@ function App() {
 
   useEffect(() => {
     fetchServices();
-    // Load history from localStorage
-    const savedSearches = JSON.parse(localStorage.getItem('lys_searches') || '[]');
-    const savedListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
-    setRecentSearches(savedSearches);
-    setMyListings(savedListings);
+    // Load history from localStorage with safety checks
+    try {
+      const savedSearches = JSON.parse(localStorage.getItem('lys_searches') || '[]');
+      const savedListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
+      setRecentSearches(Array.isArray(savedSearches) ? savedSearches : []);
+      setMyListings(Array.isArray(savedListings) ? savedListings : []);
+    } catch (e) {
+      console.warn("Corrupted localStorage found, resetting history.");
+      setRecentSearches([]);
+      setMyListings([]);
+    }
   }, [locationQuery]); // Refresh when location changes
 
   const fetchServices = async (searchQuery = '') => {
