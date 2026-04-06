@@ -96,13 +96,14 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
     let imageUrl = 'https://images.unsplash.com/photo-1540518614846-7eded433c457?q=80&w=500&auto=format&fit=crop';
 
     // S3 Image Upload (Optional)
-    if (req.file && process.env.S3_BUCKET_NAME) {
+    const rawBucketName = process.env.S3_BUCKET_NAME;
+    if (req.file && rawBucketName && rawBucketName.trim().length > 0) {
       try {
-        const bucketName = process.env.S3_BUCKET_NAME.trim();
+        const bucketName = rawBucketName.trim();
         const region = process.env.AWS_REGION || 'ap-south-1';
         const fileName = `services/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
         
-        console.log(`[S3] Initializing upload to ${bucketName} in ${region}...`);
+        console.log(`[S3] 🚀 Starting upload: ${fileName} to ${bucketName}`);
         
         const parallelUploads3 = new Upload({
           client: s3,
@@ -115,17 +116,19 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
         });
 
         await parallelUploads3.done();
-        // Reliable S3 URL format
         imageUrl = `https://${bucketName}.s3.${region}.amazonaws.com/${fileName}`;
         console.log(`[S3] ✅ Upload successful! URL: ${imageUrl}`);
       } catch (s3Error) {
-        console.error("❌ [S3 ERROR] Upload failed but continuing with default:", s3Error.message);
-        // Fallback already set at top of route
+        console.error("❌ [S3 ERROR] Upload failed:", s3Error.message);
+        console.log("[S3] Falling back to default image to save the listing...");
+        // imageUrl remains the default set at the top
       }
+    } else if (req.file) {
+      console.warn("[S3] Skipping upload: S3_BUCKET_NAME is not configured in .env");
     }
 
     // Insert into RDS PostgreSQL
-    console.log(`[RDS] Attempting to save listing: ${name}...`);
+    console.log(`[RDS] 💾 Saving listing: ${name}...`);
     const query = `
       INSERT INTO services (name, category, price, location, provider, image_url)
       VALUES ($1, $2, $3, $4, $5, $6)
@@ -137,11 +140,10 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
     console.log(`[RDS] ✅ Service saved successfully! ID: ${result.rows[0].id}`);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('❌ [CRITICAL ERROR] Backend failure:', err);
+    console.error('❌ [BACKEND CRASH] Fatal error:', err);
     res.status(500).json({ 
-      error: 'Failed to add service to RDS', 
-      message: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+      error: 'Backend failure during listing creation', 
+      message: err.message 
     });
   }
 });
