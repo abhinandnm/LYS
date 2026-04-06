@@ -83,6 +83,7 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
     // S3 Image Upload (Optional)
     if (req.file && process.env.S3_BUCKET_NAME) {
       try {
+        console.log(`[S3] Starting upload for ${req.file.originalname} to ${process.env.S3_BUCKET_NAME}`);
         const fileName = `services/${Date.now()}_${req.file.originalname}`;
         const parallelUploads3 = new Upload({
           client: s3,
@@ -94,13 +95,16 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
           },
         });
         await parallelUploads3.done();
-        imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
+        imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${fileName}`;
+        console.log(`[S3] Upload successful: ${imageUrl}`);
       } catch (s3Error) {
-        console.warn("S3 Upload failed, using default image.");
+        console.error("❌ S3 Upload failed:", s3Error.message);
+        console.warn("Using default image fallback.");
       }
     }
 
     // Insert into RDS PostgreSQL
+    console.log(`[RDS] Inserting service: ${name} into ${process.env.DB_HOST}`);
     const query = `
       INSERT INTO services (name, category, price, location, provider, image_url)
       VALUES ($1, $2, $3, $4, $5, $6)
@@ -111,8 +115,8 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
     
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Database Error:', err);
-    res.status(500).json({ error: 'Failed to add service to RDS' });
+    console.error('❌ CRITICAL Backend Error:', err);
+    res.status(500).json({ error: 'Failed to add service to RDS', detail: err.message });
   }
 });
 
