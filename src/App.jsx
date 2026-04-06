@@ -37,10 +37,16 @@ function App() {
       }
       
       const data = await response.json();
-      setServices(Array.isArray(data) ? data : []);
+      const serverServices = Array.isArray(data) ? data : [];
+      
+      // Merge with local listings to ensure persistence for the demo
+      const localListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
+      setServices([...localListings, ...serverServices]);
     } catch (error) {
       console.error("Error fetching services:", error);
-      setServices([]); // fallback to empty array to prevent map undefined error
+      // Fallback to local listings instead of just an empty array
+      const localListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
+      setServices(localListings);
     }
   };
 
