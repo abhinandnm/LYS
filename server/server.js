@@ -25,12 +25,31 @@ const pool = new Pool({
   }
 });
 
-// Test Database Connection
-pool.connect((err, client, release) => {
+// Test Database Connection & Ensure Tables Exist
+pool.connect(async (err, client, release) => {
   if (err) {
     return console.error('❌ Error acquiring client', err.stack);
   }
   console.log('✅ Connected to AWS RDS PostgreSQL');
+  
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS services (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          category VARCHAR(100),
+          price DECIMAL(10, 2),
+          location VARCHAR(255),
+          provider VARCHAR(255),
+          image_url TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Validated/Created services table successfully');
+  } catch (error) {
+    console.error('❌ Error creating checking services table', error);
+  }
+  
   release();
 });
 
