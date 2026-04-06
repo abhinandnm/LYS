@@ -68,7 +68,8 @@ function App() {
     setMyListings(updatedListings);
     localStorage.setItem('lys_my_listings', JSON.stringify(updatedListings));
     
-    fetchServices(); // Refresh list after adding
+    // Add to current feed instead of refetching
+    setServices(prev => [newService, ...prev]);
   };
 
   return (
