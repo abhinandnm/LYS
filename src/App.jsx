@@ -12,24 +12,9 @@ function App() {
   const [locationQuery, setLocationQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Activity History State
-  const [recentSearches, setRecentSearches] = useState([]);
-  const [myListings, setMyListings] = useState([]);
-
   useEffect(() => {
     fetchServices();
-    // Load history from localStorage with safety checks
-    try {
-      const savedSearches = JSON.parse(localStorage.getItem('lys_searches') || '[]');
-      const savedListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
-      setRecentSearches(Array.isArray(savedSearches) ? savedSearches : []);
-      setMyListings(Array.isArray(savedListings) ? savedListings : []);
-    } catch (e) {
-      console.warn("Corrupted localStorage found, resetting history.");
-      setRecentSearches([]);
-      setMyListings([]);
-    }
-  }, [locationQuery]); // Refresh when location changes
+  }, [locationQuery]);
 
   const fetchServices = async (searchQuery = '') => {
     try {
@@ -46,22 +31,14 @@ function App() {
       setServices(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching services:", error);
-      setServices([]); // fallback to empty array to prevent map undefined error
+      setServices([]); 
     }
   };
 
   const handleSearch = (query, location) => {
-    if (query.trim()) {
-      // Save to recent searches
-      const updatedSearches = [query, ...recentSearches.filter(s => s !== query)].slice(0, 5);
-      setRecentSearches(updatedSearches);
-      localStorage.setItem('lys_searches', JSON.stringify(updatedSearches));
-    }
-
     setSearchQuery(query);
     setLocationQuery(location);
-    fetchServices(query); // Call the search API
-    // Smooth scroll to results
+    fetchServices(query);
     const resultsSection = document.getElementById('browse');
     if (resultsSection) {
       resultsSection.scrollIntoView({ behavior: 'smooth' });
@@ -69,20 +46,13 @@ function App() {
   };
 
   const handleAddService = (newService) => {
-    // Save to My Listings
-    const updatedListings = [newService, ...myListings].slice(0, 10);
-    setMyListings(updatedListings);
-    localStorage.setItem('lys_my_listings', JSON.stringify(updatedListings));
-    
-    fetchServices(); // Refresh list after adding
+    fetchServices();
   };
 
   return (
     <div className="app">
       <Navbar 
         onOpenModal={() => setIsModalOpen(true)} 
-        recentSearches={recentSearches}
-        myListings={myListings}
         onSearch={handleSearch}
       />
       <main>
