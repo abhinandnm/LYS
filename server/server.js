@@ -33,21 +33,36 @@ pool.connect(async (err, client, release) => {
   console.log('✅ Connected to AWS RDS PostgreSQL');
   
   try {
+    // 1. Create table if missing
     await client.query(`
       CREATE TABLE IF NOT EXISTS services (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           category VARCHAR(100),
-          price DECIMAL(10, 2),
+          price VARCHAR(100),
           location VARCHAR(255),
           provider VARCHAR(255),
           image_url TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('✅ Validated/Created services table successfully');
+
+    // 2. SELF-HEAL: Ensure columns are correct even if table already existed
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        BEGIN
+          ALTER TABLE services ADD COLUMN IF NOT EXISTS image_url TEXT;
+        EXCEPTION WHEN others THEN RAISE NOTICE 'image_url column exists';
+        END;
+        
+        ALTER TABLE services ALTER COLUMN price TYPE VARCHAR(100);
+      END $$;
+    `);
+    
+    console.log('✅ Database schema verified and updated (Price is now VARCHAR)');
   } catch (error) {
-    console.error('❌ Error creating checking services table', error);
+    console.error('❌ Error during database initialization:', error);
   }
   
   release();
