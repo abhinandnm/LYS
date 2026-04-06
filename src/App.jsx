@@ -31,10 +31,16 @@ function App() {
         ? `${CONFIG.API_URL}/api/services/search?q=${searchQuery}` 
         : `${CONFIG.API_URL}/api/services`;
       const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      setServices(data);
+      setServices(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching services:", error);
+      setServices([]); // fallback to empty array to prevent map undefined error
     }
   };
 
