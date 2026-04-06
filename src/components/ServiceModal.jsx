@@ -23,17 +23,24 @@ const ServiceModal = ({ isOpen, onClose, onAddService }) => {
     setStep(2);
 
     try {
-      const savedService = await simulateRDSInsert({
-        name: formData.name,
-        category: formData.category,
-        price: formData.price,
-        location: formData.location,
-        provider: formData.provider,
-        image_url: formData.imagePreview || 'https://images.unsplash.com/photo-1540518614846-7eded433c457?q=80&w=500&auto=format&fit=crop',
-        rating: '5.0',
-        reviews: 0
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('price', formData.price);
+      formDataToSend.append('location', formData.location);
+      formDataToSend.append('provider', formData.provider);
+      if (formData.image) {
+        formDataToSend.append('image', formData.image);
+      }
+
+      const response = await fetch(`${CONFIG.API_URL}/api/services`, {
+        method: 'POST',
+        body: formDataToSend,
       });
 
+      if (!response.ok) throw new Error('Upload failed');
+      
+      const savedService = await response.json();
       onAddService(savedService);
       setStep(3);
     } catch (error) {

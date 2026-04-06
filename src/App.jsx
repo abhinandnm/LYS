@@ -37,16 +37,10 @@ function App() {
       }
       
       const data = await response.json();
-      const serverServices = Array.isArray(data) ? data : [];
-      
-      // Merge with local listings to ensure persistence for the demo
-      const localListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
-      setServices([...localListings, ...serverServices]);
+      setServices(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching services:", error);
-      // Fallback to local listings instead of just an empty array
-      const localListings = JSON.parse(localStorage.getItem('lys_my_listings') || '[]');
-      setServices(localListings);
+      setServices([]); // fallback to empty array to prevent map undefined error
     }
   };
 
@@ -74,8 +68,7 @@ function App() {
     setMyListings(updatedListings);
     localStorage.setItem('lys_my_listings', JSON.stringify(updatedListings));
     
-    // Add to current feed instead of refetching
-    setServices(prev => [newService, ...prev]);
+    fetchServices(); // Refresh list after adding
   };
 
   return (
