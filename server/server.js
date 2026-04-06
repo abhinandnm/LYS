@@ -95,8 +95,7 @@ app.post('/api/services', upload.single('image'), async (req, res) => {
             Bucket: bucketName,
             Key: fileName,
             Body: req.file.buffer,
-            ContentType: req.file.mimetype,
-            ACL: 'public-read' // Attempt to set public read if allowed
+            ContentType: req.file.mimetype
           },
         });
 
